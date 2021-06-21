@@ -8,6 +8,7 @@ struct bound
     std::vector<int> vars_id;
     std::vector<bool> positive;
     std::string relation;
+    std::string name;
     int val;
 };
 #endif //_BOUND_H_

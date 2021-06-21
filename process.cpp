@@ -25,7 +25,7 @@ extern int sum_vars;
 extern map<string, int> var_name;
 extern vector<string> goal;
 extern vector<bound> bounds;
-const double sigma = 0.4;
+double sigma;
 struct vec
 {
     vector<double> v;
@@ -109,11 +109,38 @@ struct vec
         {
             if (y.positive[i])
             {
-                v[y.vars_id[i]] += x; 
+                v[y.vars_id[i]] += x;
+                /*
+                if (v[y.vars_id[i]] < 0)
+                {
+                    v[y.vars_id[i]] = 0;
+                }
+                */
             }
             else
             {
                 v[y.vars_id[i]] -= x;
+                /*
+                if (y.vars_id[i] > 1)
+                {
+                    v[y.vars_id[i]] = 1;
+                }
+                */
+            }
+        }
+    }
+    void get_bound()
+    {
+        int i;
+        for (i = 0; i < sum_vars; i++)
+        {
+            if (v[i] < 0)
+            {
+                v[i] = 0;
+            }
+            if (v[i] > 1)
+            {
+                v[i] = 1;
             }
         }
     }
@@ -121,48 +148,81 @@ struct vec
 
 vec c;
 
-vec P(vec x)
+vec P(vec x, vector<int> &order)
 {
     int i;
     for (i = 0; i < (int)bounds.size(); i++)
     {
-        double v = x * bounds[i];
-        v /= bounds[i].vars.size();
-        if (bounds[i].relation != "=")
+        int j = order[i];
+        double v = x * bounds[j];
+        v /= bounds[j].vars.size();
+        if (bounds[j].relation != "=")
         {
             v = min(0.0, v);
         }
-        x.add(v * sigma, bounds[i]);
+        x.add(v * sigma, bounds[j]);
     }
+    x.get_bound();
     return x;
 }
-double r(vec x)
+double r(vec x, bool test = false)
 {
-    double sum = 0;
+    double sum = 0, sum2 = 0;
     int i;
+    map<string,double> ma; 
     for (i = 0; i < (int)bounds.size(); i++)
     {
         double v = x * bounds[i];
         if (bounds[i].relation != "=")
         {
             v = min(0.0, v);
+            sum += v * v;
         }
-        sum += v * v;
+        else
+        {
+            sum += v * v;
+        }
+        if (test)
+        {
+            string name = bounds[i].name.substr(0,7);
+            if ((name != "sub_val") && (name != "op_supp"))
+            {
+                name=bounds[i].name.substr(0,15);
+            }
+            ma[name]+=v*v;
+        }
     }
-    return sum;
+    if (test)
+    {
+        map<string,double>::iterator ii;
+        for (ii=ma.begin();ii!=ma.end();ii++)
+        {
+            printf("%s %.12lf\n",(*ii).first.c_str(),(*ii).second);
+        }
+    }
+    return sum + sum2;
 }
 vec S(vec x, double la)
 {
     // Calculate ga
-    double ga = 1;
+    static double last_ga = 0.5;
+    double ga = last_ga * 2;
     double std = r(x);
     int i;
+    vector<int> order;
+    for (i = 0; i < (int)bounds.size(); i++)
+    {
+        order.push_back(i);
+    }
+    random_shuffle(order.begin(),order.end());
+    //return P(x, order);
     for (i = 0 ; i <= 30; i++)
     {
         vec new_x = x + (-ga) * c;
+        new_x.get_bound();
         if (c * new_x <= c * x)
         {
-            vec new_x_2 = la * P(new_x) + (1 - la) * new_x;
+            vec new_x_2 = la * P(new_x, order) + (1 - la) * new_x;
             if (r(new_x_2) < std)
             {
                 break;
@@ -177,19 +237,21 @@ vec S(vec x, double la)
             ga = ga / 2;
         }
     }
+    last_ga = ga;
     if (i > 30)
     {
-        printf("ga = 0\n");
-        ga = 0;
+        printf("ga = %lf\n", ga);
+        return P(x, order);
     }
     
     vec t_x = x + (-ga) * c;
-    return la * P(t_x) + (1 - la) * t_x;
+    t_x.get_bound();
+    return la * P(t_x, order) + (1 - la) * t_x;
 }
 const int M = 1000;
 vec calc(double th, double ep, double la, double al, double be, vec x)
 {
-    return S(x, la);
+    //return S(x, la);
     //printf("al = %.12lf, be = %.12lf\n", al, be);
     // Step 1
     int i;
@@ -233,15 +295,16 @@ vec main_algorithm(double la)
 {
     vec x;
     int m;
-    printf("r(0) = %.12lf, c * x = %.12lf\n",sqrt(r(x)), c * x);
+    printf("r(0) = %.12lf, c * x = %.12lf\n",sqrt(r(x, true)), c * x);
     for (m = 1; m <= M; m++)
     {
         double th = 0.5;
         double ep = 0.05;
         double al = (m * 1.0 / M) * th;
         double be = 1 - (m * 1.0 / M) * (1 - th);
+        sigma = 0.8;
         x = calc(th, ep, la, al, be, x);
-        printf("r(%d) = %.12lf, c * x = %.12lf\n",m, sqrt(r(x)), c * x);
+        printf("r(%d) = %.12lf, c * x = %.12lf\n",m, sqrt(r(x, true)), c * x);
     }
     //x.divide();
     return x;
@@ -263,6 +326,7 @@ void init()
             bounds[i].vars_id.push_back(var_name[bounds[i].vars[j]]);
         }
     }
+    /*
     for (i = 0; i < sum_vars; i++)
     {
         bound x;
@@ -283,12 +347,13 @@ void init()
         x.val = 1;
         bounds.push_back(x);
     }
+    */
 }
 
 void process()
 {
     init();
-    vec ans = main_algorithm(1.3);
+    vec ans = main_algorithm(1.8);
     int i;
     for (i = 0; i < sum_vars; i ++)
     {

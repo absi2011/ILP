@@ -59,6 +59,7 @@ void data_input(string file_name)
             break;
         }
         bound x;
+        x.name = func_name;
         x.positive.push_back(true);
         for (;;)
         {
